@@ -501,7 +501,7 @@ def generate_type_5(freq_bins=128, time_bins=256, start_freq=None, start_time=No
     if start_time is None:
         start_time = np.random.uniform(time_bins * 0.12, time_bins * 0.3)
 
-    # Type III precursor
+    # --- Type III precursor ---
     t0 = start_time
     t1 = min(time_bins - 1, t0 + np.random.uniform(time_bins * 0.05, time_bins * 0.1))
     times3 = np.arange(int(t0), int(t1))
@@ -516,30 +516,82 @@ def generate_type_5(freq_bins=128, time_bins=256, start_freq=None, start_time=No
             if 0 <= f < freq_bins and 0 <= t < time_bins:
                 _add_gaussian_blob(canvas, f, t, 1.0, 1.6, amplitude * np.random.uniform(0.06, 0.12))
 
-    # Type V: broad frequency band, not tied tightly to Type III endpoint
+    # --- Type V main band ---
     type5_start = int(min(time_bins - 1, t0 + np.random.uniform(0, 4)))
-    type5_duration = int(np.random.uniform(time_bins * 0.18, time_bins * 0.35))
+    type5_duration = int(np.random.uniform(time_bins * 0.16, time_bins * 0.30))
     type5_end = min(time_bins - 1, type5_start + type5_duration)
     v_times = np.arange(type5_start, type5_end)
 
-    # Pick a broad mid/low frequency band directly
-    band_low = np.random.uniform(freq_bins * 0.12, freq_bins * 0.25)
-    band_high = np.random.uniform(freq_bins * 0.55, freq_bins * 0.78)
+    if len(v_times) == 0:
+        return canvas
 
+    band_low = np.random.uniform(freq_bins * 0.02, freq_bins * 0.10)
+    band_high = np.random.uniform(freq_bins * 0.68, freq_bins * 0.92)
     if band_high <= band_low + 10:
         band_high = band_low + 25
 
     support = np.zeros((freq_bins, time_bins))
 
+    # time-varying overall brightness / width
+    tail_var = gaussian_filter1d(np.random.uniform(0.7, 1.35, size=len(v_times)), sigma=2)
+    tail_var = np.clip(tail_var, 0.55, 1.55)
+
+    width_var = gaussian_filter1d(np.random.uniform(0.85, 1.25, size=len(v_times)), sigma=2)
+    width_var = np.clip(width_var, 0.75, 1.35)
+
+    # top / bottom boundary jitter
+    low_jitter = gaussian_filter1d(np.random.normal(0, 2.5, size=len(v_times)), sigma=1)
+    high_jitter = gaussian_filter1d(np.random.normal(0, 3.5, size=len(v_times)), sigma=1)
+
+    # persistent internal patchiness over time/frequency
+    patch_field = gaussian_filter(np.random.uniform(0.6, 1.5, size=(freq_bins, len(v_times))), sigma=(2, 1))
+    patch_field = np.clip(patch_field, 0.4, 1.7)
+
+    # --- Key fix: persistent row-specific right-edge endpoints ---
+    row_end = np.full(freq_bins, type5_end, dtype=float)
+    row_fade = np.full(freq_bins, 2.5, dtype=float)
+    row_gain = np.ones(freq_bins)
+
+    f0 = max(0, int(band_low))
+    f1 = min(freq_bins, int(band_high))
+
+    if f1 > f0:
+        band_rows = np.arange(f0, f1)
+        norm_band = (band_rows - f0) / max(f1 - f0 - 1, 1)
+
+        # base shape: rows near the middle often persist longer, but with lots of irregularity
+        end_frac = 0.62 + 0.22 * np.sin(norm_band * np.pi)
+        end_frac += gaussian_filter1d(np.random.normal(0, 0.22, size=len(band_rows)), sigma=1)
+        end_frac += np.random.normal(0, 0.08, size=len(band_rows))
+        end_frac = np.clip(end_frac, 0.32, 1.05)
+
+        # convert to actual end columns in time
+        row_end_vals = type5_start + end_frac * type5_duration
+
+        # extra jaggedness so the right edge is not smooth
+        row_end_vals += gaussian_filter1d(np.random.normal(0, 4.0, size=len(band_rows)), sigma=0.8)
+        row_end_vals = np.clip(row_end_vals, type5_start + 4, type5_end + 6)
+
+        row_end[f0:f1] = row_end_vals
+
+        # row-specific fade widths so cutoff softness varies by row
+        fade_vals = 1.8 + 2.8 * np.random.uniform(0.6, 1.3, size=len(band_rows))
+        fade_vals = gaussian_filter1d(fade_vals, sigma=1)
+        row_fade[f0:f1] = np.clip(fade_vals, 1.2, 4.8)
+
+        # row-specific brightness
+        gain_vals = 0.85 + 0.45 * np.sin(norm_band * np.pi)
+        gain_vals += gaussian_filter1d(np.random.normal(0, 0.18, size=len(band_rows)), sigma=1)
+        row_gain[f0:f1] = np.clip(gain_vals, 0.55, 1.5)
+
     for t in v_times:
-        p = (t - type5_start) / max(type5_end - type5_start, 1)
+        i = t - type5_start
+        p = (t - type5_start) / max(type5_duration, 1)
 
-        # fairly strong at onset, then slowly fades
-        env = 0.75 * np.exp(-1.8 * p) + 0.25 * np.exp(-0.3 * p)
+        env = (0.45 + 0.55 * np.exp(-0.85 * p)) * tail_var[i]
 
-        # the band narrows slightly over time
-        low_t = band_low + (band_high - band_low) * 0.08 * p
-        high_t = band_high - (band_high - band_low) * 0.18 * p
+        low_t = band_low + (band_high - band_low) * 0.02 * p + low_jitter[i]
+        high_t = band_high - (band_high - band_low) * 0.12 * p + high_jitter[i]
 
         fmin = max(0, int(low_t))
         fmax = min(freq_bins, int(high_t))
@@ -548,32 +600,44 @@ def generate_type_5(freq_bins=128, time_bins=256, start_freq=None, start_time=No
 
         freqs = np.arange(fmin, fmax)
         center = 0.5 * (low_t + high_t)
-        half_width = max((high_t - low_t) / 2, 1.0)
+        half_width = max((high_t - low_t) / 2, 1.0) * width_var[i]
 
-        # flatter than a Gaussian so it reads as a band, but still has soft edges
         x = np.abs((freqs - center) / half_width)
         profile = np.clip(1.0 - x**4, 0, 1)
 
-        # slightly stronger in the middle of the band
-        power = amplitude * 0.13 * env * profile
-        power *= np.random.uniform(0.9, 1.1, size=len(freqs))
+        # row-specific ragged right edge in absolute time
+        edge_mask = 1.0 / (1.0 + np.exp((t - row_end[freqs]) / row_fade[freqs]))
+
+        # internal patchiness
+        patch = patch_field[freqs, i]
+
+        col_scale = np.random.uniform(0.92, 1.18)
+        power = amplitude * 0.24 * env * profile * edge_mask * patch * row_gain[freqs] * col_scale
+        power *= np.random.uniform(0.92, 1.10, size=len(freqs))
+
+        # occasional weak spots / holes
+        hole_mask = np.random.uniform(0, 1, size=len(freqs))
+        hole_factor = np.ones(len(freqs))
+        weak_idx = hole_mask < 0.08
+        hole_factor[weak_idx] = np.random.uniform(0.15, 0.55, size=np.sum(weak_idx))
+        power *= hole_factor
 
         canvas[fmin:fmax, t] += power
-        support[fmin:fmax, t] += profile
+        support[fmin:fmax, t] += profile * edge_mask
 
-    # Bright onset column across the same band
-    for t in range(type5_start, min(type5_start + 4, time_bins)):
+    # onset column, but not overwhelmingly strong
+    for t in range(type5_start, min(type5_start + 3, time_bins)):
         fmin = max(0, int(band_low))
         fmax = min(freq_bins, int(band_high))
         freqs = np.arange(fmin, fmax)
         center = 0.5 * (band_low + band_high)
         half_width = max((band_high - band_low) / 2, 1.0)
         profile = np.clip(1.0 - np.abs((freqs - center) / half_width)**4, 0, 1)
-        canvas[fmin:fmax, t] += amplitude * 0.18 * profile
+        onset_patch = gaussian_filter1d(np.random.uniform(0.8, 1.25, size=len(freqs)), sigma=1)
+        canvas[fmin:fmax, t] += amplitude * 0.18 * profile * onset_patch
         support[fmin:fmax, t] += profile
 
-    # Internal texture inside the Type V band only
-    texture = gaussian_filter(np.random.randn(freq_bins, time_bins), sigma=1.5)
-    canvas += support * texture * 0.035
+    texture = gaussian_filter(np.random.randn(freq_bins, time_bins), sigma=1.3)
+    canvas += support * texture * 0.045
 
     return canvas
