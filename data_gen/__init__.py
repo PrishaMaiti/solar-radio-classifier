@@ -11,4 +11,8 @@ from .synthesizer import (
 	generate_type_3,
 	generate_type_4,
 	generate_type_5,
+	generate_type_6,
+	generate_type_7,
+	generate_type_8,
+	generate_rfi,
 )
