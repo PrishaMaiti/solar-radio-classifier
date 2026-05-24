@@ -103,6 +103,15 @@ def generate_rfi(freq_bins=128, time_bins=256, n_lines=None, n_spikes=None):
         amp = np.random.uniform(0.15, 0.5)
         _add_gaussian_blob(canvas, freq_center, col, freq_span, 0.8, amp)
 
+    # scattered dots to make the RFI look more like noisy clutter
+    n_dots = np.random.randint(18, 42)
+    for _ in range(n_dots):
+        dot_freq = np.random.uniform(0, freq_bins)
+        dot_time = np.random.uniform(0, time_bins)
+        dot_amp = np.random.uniform(0.06, 0.22)
+        dot_sigma = np.random.uniform(0.35, 1.0)
+        _add_gaussian_blob(canvas, dot_freq, dot_time, dot_sigma, dot_sigma, dot_amp)
+
     # occasional wideband sweeps
     if np.random.random() < 0.4:
         start = np.random.uniform(freq_bins * 0.1, freq_bins * 0.9)
