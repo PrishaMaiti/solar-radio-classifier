@@ -29,6 +29,105 @@ def _blank_canvas(freq_bins, time_bins, background_mean=0.0, background_std=0.03
     return canvas
 
 
+def generate_type_6(freq_bins=128, time_bins=256, n_bursts=None):
+    """Type 6: sustained bunch of Type 3 bursts."""
+    canvas = _blank_canvas(freq_bins, time_bins)
+
+    if n_bursts is None:
+        n_bursts = np.random.randint(3, 7)
+
+    # spread several Type 3-style subbursts across the time axis
+    times = np.linspace(0, time_bins, n_bursts + 2)[1:-1]
+    for t_anchor in times:
+        t_offset = int(t_anchor + np.random.uniform(-0.05, 0.05) * time_bins)
+        # create a compact Type 3 and add it with reduced amplitude
+        sub = generate_type_3(freq_bins=freq_bins, time_bins=time_bins, start_time=max(0, t_offset))
+        canvas += gaussian_filter(sub, sigma=1) * np.random.uniform(0.7, 1.05)
+
+    # mild smoothing and texture
+    canvas = gaussian_filter(canvas, sigma=1.2)
+    return canvas
+
+
+def generate_type_7(freq_bins=128, time_bins=256):
+    """Type 7: bunch of Type 3's plus at least one Type 5 overlay."""
+    canvas = _blank_canvas(freq_bins, time_bins)
+
+    # base: sustained Type 3 activity
+    base = generate_type_6(freq_bins=freq_bins, time_bins=time_bins)
+    canvas += base
+
+    # add one or two Type 5-like broad bands
+    n_type5 = np.random.randint(1, 3)
+    for _ in range(n_type5):
+        start_freq = np.random.uniform(freq_bins * 0.55, freq_bins * 0.85)
+        start_time = np.random.uniform(time_bins * 0.05, time_bins * 0.35)
+        type5 = generate_type_5(freq_bins=freq_bins, time_bins=time_bins, start_freq=start_freq, start_time=start_time)
+        canvas += type5 * np.random.uniform(0.7, 1.1)
+
+    canvas = gaussian_filter(canvas, sigma=0.9)
+    return canvas
+
+
+def generate_type_8(freq_bins=128, time_bins=256):
+    """Type 8: previously Type 1 — broadband clustered spikes / storms."""
+    # reuse generate_type_1 behavior (renamed class)
+    return generate_type_1(freq_bins=freq_bins, time_bins=time_bins)
+
+
+def generate_rfi(freq_bins=128, time_bins=256, n_lines=None, n_spikes=None):
+    """Generate radio-frequency interference (RFI) examples: narrowband lines and impulsive spikes.
+
+    Intended to represent non-astrophysical interference for the 'RFI' class.
+    """
+    canvas = _blank_canvas(freq_bins, time_bins, background_std=0.02)
+
+    if n_lines is None:
+        n_lines = np.random.randint(1, 5)
+    if n_spikes is None:
+        n_spikes = np.random.randint(4, 12)
+
+    # horizontal narrowband continuous carriers
+    for _ in range(n_lines):
+        row = int(np.random.uniform(0, freq_bins))
+        amp = np.random.uniform(0.12, 0.4)
+        width = np.random.uniform(0.6, 2.6)
+        for t in range(time_bins):
+            _add_gaussian_blob(canvas, row + np.random.normal(0, 0.3), t, width, 0.6, amp * np.random.uniform(0.85, 1.15))
+
+    # impulsive narrow spikes (vertical-ish)
+    for _ in range(n_spikes):
+        col = int(np.random.uniform(0, time_bins))
+        freq_center = np.random.uniform(0, freq_bins)
+        freq_span = np.random.uniform(1.0, 6.0)
+        amp = np.random.uniform(0.15, 0.5)
+        _add_gaussian_blob(canvas, freq_center, col, freq_span, 0.8, amp)
+
+    # scattered dots to make the RFI look more like noisy clutter
+    n_dots = np.random.randint(18, 42)
+    for _ in range(n_dots):
+        dot_freq = np.random.uniform(0, freq_bins)
+        dot_time = np.random.uniform(0, time_bins)
+        dot_amp = np.random.uniform(0.06, 0.22)
+        dot_sigma = np.random.uniform(0.35, 1.0)
+        _add_gaussian_blob(canvas, dot_freq, dot_time, dot_sigma, dot_sigma, dot_amp)
+
+    # occasional wideband sweeps
+    if np.random.random() < 0.4:
+        start = np.random.uniform(freq_bins * 0.1, freq_bins * 0.9)
+        drift = np.random.uniform(-freq_bins * 0.35, freq_bins * 0.35)
+        dur = int(np.random.uniform(time_bins * 0.06, time_bins * 0.22))
+        t0 = int(np.random.uniform(0, time_bins - dur))
+        for i in range(dur):
+            f = start + drift * (i / max(dur - 1, 1))
+            _add_gaussian_blob(canvas, f + np.random.normal(0, 1.8), t0 + i, np.random.uniform(1.2, 3.5), 0.8, np.random.uniform(0.05, 0.18))
+
+    # stronger artifact texture
+    canvas += gaussian_filter(np.random.randn(freq_bins, time_bins), sigma=1.0) * 0.08
+
+    return canvas
+
+
 def _add_gaussian_blob(canvas, center_freq, center_time, freq_sigma, time_sigma, amplitude):
     freq_idx, time_idx = np.indices(canvas.shape)
     blob = amplitude * np.exp(
@@ -315,103 +414,63 @@ def generate_type_2(freq_bins=128, time_bins=256, start_freq=None, start_time=No
     _draw_line(canvas, start_freq, start_time, end_freq, end_time, thickness, amplitude)
     return canvas'''
 
-def generate_type_3(freq_bins=128, time_bins=256, start_freq=None, start_time=None, thickness=1.2, amplitude=1.9):
+def generate_type_3(freq_bins=128, time_bins=256, start_freq=None, start_time=None, thickness=1.2, amplitude=1.9, duration_min=30.0, cap_freq_frac=0.83, vertical_minutes=(5.0, 10.0)):
     canvas = _blank_canvas(freq_bins, time_bins)
 
-    if start_freq is None:
-        start_freq = np.random.uniform(freq_bins * 0.55, freq_bins * 0.9)
-    if start_time is None:
-        start_time = np.random.uniform(0, time_bins * 0.25)
+    # Draw Type 3 as two near-vertical, jagged stems with pointed triangular tops.
+    cap_bin = max(4, int(cap_freq_frac * freq_bins))
 
-    mode = np.random.choice(["compact", "spread", "storm"], p=[0.35, 0.4, 0.25])
+    for minute in vertical_minutes:
+        t_col = int(round((minute / float(duration_min)) * (time_bins - 1)))
+        t_col = max(1, min(time_bins - 2, t_col))
 
-    if mode == "compact":
-        n_subbursts = np.random.randint(5, 9)
-        time_jitter = (-4, 10)
-        duration_scale = (0.08, 0.16)
-        drift_scale = (0.45, 0.75)
-        envelope_scale = (4.0, 6.0)
-    elif mode == "spread":
-        n_subbursts = np.random.randint(6, 12)
-        time_jitter = (-6, 45)
-        duration_scale = (0.10, 0.22)
-        drift_scale = (0.4, 0.7)
-        envelope_scale = (5.0, 8.0)
-    else:  # storm
-        n_subbursts = np.random.randint(10, 18)
-        time_jitter = (-8, 80)
-        duration_scale = (0.08, 0.18)
-        drift_scale = (0.35, 0.65)
-        envelope_scale = (5.5, 9.0)
+        # Stem: frequency changes rapidly while time stays nearly fixed.
+        for f in range(cap_bin):
+            if np.random.random() < 0.07:
+                continue
 
-    base_duration = np.random.uniform(time_bins * duration_scale[0], time_bins * duration_scale[1])
-    base_drift = np.random.uniform(freq_bins * drift_scale[0], freq_bins * drift_scale[1])
+            # Keep time jitter very small so line appears vertical.
+            t_center = t_col + np.random.uniform(-0.2, 0.2)
+            f_center = f + np.random.uniform(-1.4, 1.4)
+            p = f / max(1, cap_bin - 1)
 
-    all_freqs = []
-    all_times = []
+            stem_amp = amplitude * np.random.uniform(0.02, 0.075) * (0.55 + 0.9 * p)
+            _add_gaussian_blob(canvas, f_center, t_center, 0.7, 0.34, stem_amp)
 
-    for _ in range(n_subbursts):
-        local_start_time = start_time + np.random.uniform(*time_jitter)
-        local_start_freq = start_freq + np.random.normal(0, 8)
+            # Jagged edge texture on both sides of the stem.
+            if np.random.random() < 0.28:
+                _add_gaussian_blob(
+                    canvas,
+                    f_center + np.random.uniform(-1.2, 1.2),
+                    t_center + np.random.choice([-1.0, 1.0]) * np.random.uniform(0.2, 0.6),
+                    0.75,
+                    0.28,
+                    stem_amp * np.random.uniform(0.35, 0.7),
+                )
 
-        duration = base_duration * np.random.uniform(0.7, 1.25)
-        end_time = min(time_bins - 1, local_start_time + duration)
+        # Triangular tip at top of each stem.
+        tip_height = 8
+        for layer in range(tip_height):
+            f_tip = cap_bin + layer
+            if f_tip >= freq_bins:
+                break
 
-        times = np.arange(int(max(0, local_start_time)), int(end_time))
-        if len(times) < 5:
-            continue
+            # Width shrinks with height to form triangle.
+            half_width_t = max(0.08, 1.1 - 0.15 * layer)
+            tip_amp = amplitude * np.exp(-0.45 * layer) * np.random.uniform(0.11, 0.2)
 
-        progress = (times - local_start_time) / max(end_time - local_start_time, 1)
+            for dt in (-half_width_t, 0.0, half_width_t):
+                _add_gaussian_blob(
+                    canvas,
+                    f_tip + np.random.uniform(-0.7, 0.7),
+                    t_col + dt + np.random.uniform(-0.08, 0.08),
+                    0.75,
+                    0.3,
+                    tip_amp,
+                )
 
-        total_drift = base_drift * np.random.uniform(0.85, 1.15)
-        curve_power = np.random.uniform(0.6, 0.95)
-        freqs = local_start_freq - total_drift * (progress ** curve_power)
-
-        freqs += gaussian_filter1d(np.random.normal(0, 1.5, size=len(times)), sigma=2)
-
-        keep_prob = 0.94 if mode != "storm" else 0.88
-        keep = np.random.random(len(times)) < keep_prob
-        freqs, times, progress = freqs[keep], times[keep], progress[keep]
-
-        all_freqs.extend(freqs)
-        all_times.extend(times)
-
-        for f, t, p in zip(freqs, times, progress):
-            if 0 <= f < freq_bins and 0 <= t < time_bins:
-                halo_w = thickness * np.random.uniform(2.0, 4.5)
-                halo_amp = amplitude * np.random.uniform(0.015, 0.045)
-                _add_gaussian_blob(canvas, f, t, halo_w, halo_w * 1.8, halo_amp)
-
-        for f, t, p in zip(freqs, times, progress):
-            if 0 <= f < freq_bins and 0 <= t < time_bins:
-                lane_w = thickness * np.random.uniform(0.9, 1.8)
-                lane_amp = amplitude * np.random.uniform(0.04, 0.11)
-                _add_gaussian_blob(canvas, f, t, lane_w, lane_w * 1.4, lane_amp)
-
-        if np.random.random() < 0.55:
-            h_offset = np.random.uniform(5, 12)
-            h_times = times + np.random.randint(0, 3)
-            h_freqs = freqs + h_offset + gaussian_filter1d(np.random.normal(0, 1.0, size=len(freqs)), sigma=2)
-
-            for f, t in zip(h_freqs, h_times):
-                if 0 <= f < freq_bins and 0 <= t < time_bins:
-                    h_w = thickness * np.random.uniform(0.9, 1.7)
-                    h_amp = amplitude * np.random.uniform(0.015, 0.05)
-                    _add_gaussian_blob(canvas, f, t, h_w, h_w * 1.3, h_amp)
-
-    if len(all_freqs) > 0:
-        envelope = np.zeros((freq_bins, time_bins))
-        env_f = np.random.uniform(*envelope_scale)
-        env_t = env_f * np.random.uniform(1.2, 2.2)
-
-        for f, t in zip(all_freqs, all_times):
-            if 0 <= f < freq_bins and 0 <= t < time_bins:
-                _add_gaussian_blob(envelope, f, t, env_f, env_t, 0.01)
-
-        texture = gaussian_filter(np.random.randn(freq_bins, time_bins), sigma=2)
-        power_texture = np.clip(0.8 + 0.3 * texture, 0.25, 1.4)
-        canvas += envelope * power_texture * (0.55 if mode == "compact" else 0.4 if mode == "spread" else 0.3)
-
+    # Blend while preserving verticalness.
+    canvas = gaussian_filter(canvas, sigma=0.45)
     return canvas
 
 
@@ -539,50 +598,16 @@ def generate_type_5(freq_bins=128, time_bins=256, start_freq=None, start_time=No
     width_var = gaussian_filter1d(np.random.uniform(0.85, 1.25, size=len(v_times)), sigma=2)
     width_var = np.clip(width_var, 0.75, 1.35)
 
-    # top / bottom boundary jitter
-    low_jitter = gaussian_filter1d(np.random.normal(0, 2.5, size=len(v_times)), sigma=1)
-    high_jitter = gaussian_filter1d(np.random.normal(0, 3.5, size=len(v_times)), sigma=1)
+    # squiggly triangle edges: a wavy base and a wavering hypotenuse
+    low_jitter = gaussian_filter1d(np.random.normal(0, 2.2, size=len(v_times)), sigma=1)
+    high_jitter = gaussian_filter1d(np.random.normal(0, 3.2, size=len(v_times)), sigma=1)
+    low_wave = gaussian_filter1d(np.random.normal(0, 1.0, size=len(v_times)), sigma=2)
+    high_wave = gaussian_filter1d(np.random.normal(0, 1.4, size=len(v_times)), sigma=2)
+    taper_exponent = np.random.uniform(0.85, 1.15)
 
     # persistent internal patchiness over time/frequency
     patch_field = gaussian_filter(np.random.uniform(0.6, 1.5, size=(freq_bins, len(v_times))), sigma=(2, 1))
     patch_field = np.clip(patch_field, 0.4, 1.7)
-
-    # --- Key fix: persistent row-specific right-edge endpoints ---
-    row_end = np.full(freq_bins, type5_end, dtype=float)
-    row_fade = np.full(freq_bins, 2.5, dtype=float)
-    row_gain = np.ones(freq_bins)
-
-    f0 = max(0, int(band_low))
-    f1 = min(freq_bins, int(band_high))
-
-    if f1 > f0:
-        band_rows = np.arange(f0, f1)
-        norm_band = (band_rows - f0) / max(f1 - f0 - 1, 1)
-
-        # base shape: rows near the middle often persist longer, but with lots of irregularity
-        end_frac = 0.62 + 0.22 * np.sin(norm_band * np.pi)
-        end_frac += gaussian_filter1d(np.random.normal(0, 0.22, size=len(band_rows)), sigma=1)
-        end_frac += np.random.normal(0, 0.08, size=len(band_rows))
-        end_frac = np.clip(end_frac, 0.32, 1.05)
-
-        # convert to actual end columns in time
-        row_end_vals = type5_start + end_frac * type5_duration
-
-        # extra jaggedness so the right edge is not smooth
-        row_end_vals += gaussian_filter1d(np.random.normal(0, 4.0, size=len(band_rows)), sigma=0.8)
-        row_end_vals = np.clip(row_end_vals, type5_start + 4, type5_end + 6)
-
-        row_end[f0:f1] = row_end_vals
-
-        # row-specific fade widths so cutoff softness varies by row
-        fade_vals = 1.8 + 2.8 * np.random.uniform(0.6, 1.3, size=len(band_rows))
-        fade_vals = gaussian_filter1d(fade_vals, sigma=1)
-        row_fade[f0:f1] = np.clip(fade_vals, 1.2, 4.8)
-
-        # row-specific brightness
-        gain_vals = 0.85 + 0.45 * np.sin(norm_band * np.pi)
-        gain_vals += gaussian_filter1d(np.random.normal(0, 0.18, size=len(band_rows)), sigma=1)
-        row_gain[f0:f1] = np.clip(gain_vals, 0.55, 1.5)
 
     for t in v_times:
         i = t - type5_start
@@ -590,11 +615,13 @@ def generate_type_5(freq_bins=128, time_bins=256, start_freq=None, start_time=No
 
         env = (0.45 + 0.55 * np.exp(-0.85 * p)) * tail_var[i]
 
-        low_t = band_low + (band_high - band_low) * 0.02 * p + low_jitter[i]
-        high_t = band_high - (band_high - band_low) * 0.12 * p + high_jitter[i]
+        # Let the upper edge collapse toward the base so the burst reads as a right triangle.
+        low_t = band_low + 0.05 * (band_high - band_low) * p + low_jitter[i] + 0.35 * low_wave[i]
+        high_t = band_high - (band_high - band_low) * (0.95 * (p ** taper_exponent)) + high_jitter[i] + 0.55 * high_wave[i]
+        high_t = max(high_t, low_t + 4.0)
 
-        fmin = max(0, int(low_t))
-        fmax = min(freq_bins, int(high_t))
+        fmin = max(0, int(np.floor(low_t)))
+        fmax = min(freq_bins, int(np.ceil(high_t)))
         if fmax <= fmin:
             continue
 
@@ -605,14 +632,11 @@ def generate_type_5(freq_bins=128, time_bins=256, start_freq=None, start_time=No
         x = np.abs((freqs - center) / half_width)
         profile = np.clip(1.0 - x**4, 0, 1)
 
-        # row-specific ragged right edge in absolute time
-        edge_mask = 1.0 / (1.0 + np.exp((t - row_end[freqs]) / row_fade[freqs]))
-
         # internal patchiness
         patch = patch_field[freqs, i]
 
         col_scale = np.random.uniform(0.92, 1.18)
-        power = amplitude * 0.24 * env * profile * edge_mask * patch * row_gain[freqs] * col_scale
+        power = amplitude * 0.24 * env * profile * patch * col_scale
         power *= np.random.uniform(0.92, 1.10, size=len(freqs))
 
         # occasional weak spots / holes
@@ -623,7 +647,7 @@ def generate_type_5(freq_bins=128, time_bins=256, start_freq=None, start_time=No
         power *= hole_factor
 
         canvas[fmin:fmax, t] += power
-        support[fmin:fmax, t] += profile * edge_mask
+        support[fmin:fmax, t] += profile
 
     # onset column, but not overwhelmingly strong
     for t in range(type5_start, min(type5_start + 3, time_bins)):
