@@ -17,7 +17,6 @@ CLASS_NAMES = (
     "type_7",
     "type_8",
     "no_burst",
-    "rfi",
 )
 
 
@@ -69,10 +68,10 @@ class SolarRadioClassifier(nn.Module):
         self.features = nn.Sequential(*conv_layers)
         self.pool = nn.AdaptiveAvgPool2d((4, 4))
 
-        classifier_layers: list[nn.Module] = []
+        shared_layers: list[nn.Module] = []
         current_dim = current_channels * 4 * 4
         for hidden_dim in hidden_dims:
-            classifier_layers.extend(
+            shared_layers.extend(
                 [
                     nn.Linear(current_dim, hidden_dim),
                     nn.ReLU(inplace=True),
@@ -80,9 +79,10 @@ class SolarRadioClassifier(nn.Module):
                 ]
             )
             current_dim = hidden_dim
-        classifier_layers.append(nn.Linear(current_dim, num_classes))
 
-        self.classifier = nn.Sequential(*classifier_layers)
+        self.classifier = nn.Sequential(*shared_layers)
+        self.solar_head = nn.Linear(current_dim, num_classes)
+        self.rfi_head = nn.Linear(current_dim, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -92,7 +92,7 @@ class SolarRadioClassifier(nn.Module):
             x: Input tensor shaped (batch, channels, height, width).
 
         Returns:
-            Raw class logits shaped (batch, num_classes).
+            Dict with solar class logits and binary RFI logits.
         """
         if x.ndim == 3:
             x = x.unsqueeze(1)
@@ -100,8 +100,18 @@ class SolarRadioClassifier(nn.Module):
         x = self.features(x)
         x = self.pool(x)
         x = torch.flatten(x, 1)
-        return self.classifier(x)
+        x = self.classifier(x)
+        return {
+            "solar_logits": self.solar_head(x),
+            "rfi_logits": self.rfi_head(x).squeeze(1),
+        }
 
     def predict_proba(self, x: torch.Tensor) -> torch.Tensor:
-        """Return softmax probabilities for inference/reporting."""
-        return torch.softmax(self.forward(x), dim=1)
+        """Return solar class probabilities for inference/reporting."""
+        outputs = self.forward(x)
+        return torch.softmax(outputs["solar_logits"], dim=1)
+
+    def predict_rfi_proba(self, x: torch.Tensor) -> torch.Tensor:
+        """Return RFI-present probabilities for inference/reporting."""
+        outputs = self.forward(x)
+        return torch.sigmoid(outputs["rfi_logits"])

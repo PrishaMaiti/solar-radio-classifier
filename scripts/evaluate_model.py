@@ -28,10 +28,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-height", type=int, default=224, help="Resized image height.")
     parser.add_argument("--image-width", type=int, default=224, help="Resized image width.")
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu", help="Evaluation device.")
+    parser.add_argument("--rfi-threshold", type=float, default=0.5, help="RFI-present probability threshold.")
     parser.add_argument(
         "--confusion-matrix",
         default="models/test_confusion_matrix.png",
         help="Output path for the test confusion matrix image.",
+    )
+    parser.add_argument(
+        "--rfi-confusion-matrix",
+        default="models/test_rfi_confusion_matrix.png",
+        help="Output path for the test RFI confusion matrix image.",
     )
     return parser.parse_args()
 
@@ -47,14 +53,24 @@ def main() -> None:
     model = SolarRadioClassifier(in_channels=1, num_classes=len(CLASS_NAMES)).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
 
-    metrics = evaluate(model, loader, make_loss_fn(), device)
+    metrics = evaluate(model, loader, make_loss_fn(), device, rfi_threshold=args.rfi_threshold)
     plot_confusion_matrix(metrics["confusion_matrix"], save_path=args.confusion_matrix)
+    plot_confusion_matrix(
+        metrics["rfi_confusion_matrix"],
+        class_names=("clean", "rfi"),
+        save_path=args.rfi_confusion_matrix,
+    )
 
     print(f"Test samples: {len(dataset)}")
     print("Class order:", ", ".join(CLASS_NAMES))
     print(f"test_loss={metrics['loss']:.4f}")
     print(f"test_acc={metrics['accuracy']:.4f}")
     print(f"test_burst_macro_recall={metrics['burst_macro_recall']:.4f}")
+    print(f"test_rfi_acc={metrics['rfi_accuracy']:.4f}")
+    print(f"test_rfi_recall={metrics['rfi_recall']:.4f}")
+    print(f"test_rfi_precision={metrics['rfi_precision']:.4f}")
+    print(f"test_rfi_f1={metrics['rfi_f1']:.4f}")
+    print(f"rfi_threshold={args.rfi_threshold:.4f}")
     print("Per-class metrics:")
     for class_name, values in metrics["per_class"].items():
         print(
@@ -67,7 +83,10 @@ def main() -> None:
         )
     print("Confusion matrix:")
     print(metrics["confusion_matrix"].numpy())
+    print("RFI confusion matrix:")
+    print(metrics["rfi_confusion_matrix"].numpy())
     print(f"Confusion matrix image: {args.confusion_matrix}")
+    print(f"RFI confusion matrix image: {args.rfi_confusion_matrix}")
 
 
 if __name__ == "__main__":
