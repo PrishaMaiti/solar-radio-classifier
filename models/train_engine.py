@@ -42,7 +42,7 @@ def build_class_weights(
     Args:
         class_counts: Counts ordered to match CLASS_NAMES.
         device: Optional target device.
-        burst_weight: Extra multiplier for type_1 through type_8 classes.
+        burst_weight: Extra multiplier for type_* classes.
         no_burst_weight: Extra multiplier for the no_burst class.
         rfi_weight: Extra multiplier for the rfi class.
 
@@ -54,11 +54,17 @@ def build_class_weights(
         raise ValueError("All class counts must be positive to build class weights.")
 
     weights = counts.sum() / (len(counts) * counts)
+    if len(weights) != len(CLASS_NAMES):
+        raise ValueError(f"Expected {len(CLASS_NAMES)} class counts, got {len(weights)}.")
+
     multipliers = torch.ones_like(weights)
-    if len(weights) >= 10:
-        multipliers[:8] *= burst_weight
-        multipliers[8] *= no_burst_weight
-        multipliers[9] *= rfi_weight
+    for index, class_name in enumerate(CLASS_NAMES):
+        if class_name.startswith("type_"):
+            multipliers[index] *= burst_weight
+        elif class_name == "no_burst":
+            multipliers[index] *= no_burst_weight
+        elif class_name == "rfi":
+            multipliers[index] *= rfi_weight
     weights = weights * multipliers
     return weights.to(device) if device is not None else weights
 

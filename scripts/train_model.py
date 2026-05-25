@@ -24,6 +24,9 @@ from models.train_engine import build_class_weights, train
 
 
 LABEL_PATTERN = re.compile(r"_(type_\d+|no_burst|rfi)\.png$")
+LABEL_ALIASES = {
+    "type_1": "type_8",
+}
 CLASS_TO_INDEX = {name: index for index, name in enumerate(CLASS_NAMES)}
 
 
@@ -42,6 +45,7 @@ class SpectrogramDataset(Dataset):
             if match is None:
                 continue
             label = match.group(1)
+            label = LABEL_ALIASES.get(label, label)
             if label not in CLASS_TO_INDEX:
                 continue
             samples.append((path, CLASS_TO_INDEX[label]))

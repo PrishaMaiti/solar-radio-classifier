@@ -9,7 +9,6 @@ from torch import nn
 
 
 CLASS_NAMES = (
-    "type_1",
     "type_2",
     "type_3",
     "type_4",
