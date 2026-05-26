@@ -218,6 +218,10 @@ def plot_confusion_matrix(
     class_names: tuple[str, ...] = CLASS_NAMES,
     save_path: str | Path | None = None,
     normalize: bool = False,
+    value_font_size: int = 16,
+    tick_font_size: int = 13,
+    label_font_size: int = 15,
+    title_font_size: int = 18,
 ) -> None:
     """Save or display a confusion matrix image."""
     import matplotlib
@@ -229,22 +233,22 @@ def plot_confusion_matrix(
     if normalize:
         cm = cm / cm.sum(dim=1, keepdim=True).clamp_min(1)
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(11, 9))
     image = ax.imshow(cm.numpy(), cmap="Blues")
     fig.colorbar(image, ax=ax)
     ax.set_xticks(range(len(class_names)))
     ax.set_yticks(range(len(class_names)))
-    ax.set_xticklabels(class_names, rotation=45, ha="right")
-    ax.set_yticklabels(class_names)
-    ax.set_xlabel("Predicted label")
-    ax.set_ylabel("True label")
-    ax.set_title("Confusion Matrix")
+    ax.set_xticklabels(class_names, rotation=45, ha="right", fontsize=tick_font_size)
+    ax.set_yticklabels(class_names, fontsize=tick_font_size)
+    ax.set_xlabel("Predicted label", fontsize=label_font_size)
+    ax.set_ylabel("True label", fontsize=label_font_size)
+    ax.set_title("Confusion Matrix", fontsize=title_font_size)
 
     for row in range(cm.shape[0]):
         for col in range(cm.shape[1]):
             value = cm[row, col].item()
             label = f"{value:.2f}" if normalize else str(int(value))
-            ax.text(col, row, label, ha="center", va="center", fontsize=8)
+            ax.text(col, row, label, ha="center", va="center", fontsize=value_font_size, fontweight="bold")
 
     fig.tight_layout()
     if save_path is not None:
